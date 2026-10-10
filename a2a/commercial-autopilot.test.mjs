@@ -24,6 +24,14 @@ test("Autonomous seller runs broker discovery and one planned matching request, 
       const req = JSON.parse(options.body);
       const action = req.params.message.parts[0].data.action;
       if (!["discover_buyer_demand","find_counterparty"].includes(action)) throw new Error("Unexpected action");
+      if (action === "find_counterparty") {
+        const input = req.params.message.parts[0].data.input;
+        if (typeof input.query !== "string" || input.query.length < 5 ||
+            input.item_type !== "DEMAND" || !Number.isInteger(input.limit) ||
+            input.subject !== undefined || input.offer_item_id !== undefined) {
+          throw new Error("Invalid MARS broker search schema");
+        }
+      }
       if (action === "discover_buyer_demand" &&
           (typeof req.params.message.parts[0].data.input?.query !== "string" ||
            req.params.message.parts[0].data.input.query.trim().length < 10)) {
@@ -91,5 +99,50 @@ test("Previous MARS QUERY_REQUIRED failure is retried at once with a real query,
     const second=run();
     assert.equal(second.status,0,second.stderr);
     assert.doesNotMatch(second.stdout,/MARS demand discovery:/);
+  } finally { await rm(home,{recursive:true,force:true}); }
+});
+
+test("An already-failed legacy MARS broker attempt is repaired only once using query/item_type", async () => {
+  const home=await mkdtemp(join(tmpdir(),"broker-schema-repair-"));
+  try {
+    const dir=join(home,".openclaw/workspace/research/agent-commerce");
+    await mkdir(dir,{recursive:true});
+    await writeFile(join(dir,"commercial-autopilot-state.json"),JSON.stringify({
+      version:1,discoveryQueryVersion:1,lastDiscoveryAt:new Date().toISOString(),
+      lastMarsActionAt:new Date().toISOString(),lastRelayAt:null,relayTargets:{},
+      operations:{
+        MARS_B2B_BROKER_INIT_20261010:{
+          status:"TASK_STATE_FAILED",action:"find_counterparty",
+          reply:{state:"TASK_STATE_FAILED",operationStatus:422,operationOk:false,
+                 operationResult:JSON.stringify({status:"QUERY_REQUIRED"})}
+        }
+      }
+    }));
+    const mock=join(home,"mock-broker-repair.mjs");
+    await writeFile(mock,`globalThis.fetch=async (url,opts)=>{
+      const req=JSON.parse(opts.body);
+      const payload=req.params.message.parts[0].data;
+      if(payload.action!=="find_counterparty" ||
+         !payload.input.query || payload.input.item_type!=="DEMAND" ||
+         payload.input.offer_item_id!==undefined || !Number.isInteger(payload.input.limit)){
+        throw new Error("INVALID_BROKER_CONTRACT");
+      }
+      return new Response(JSON.stringify({jsonrpc:"2.0",result:{task:{
+        id:"repair_mock",status:{state:"TASK_STATE_COMPLETED"},
+        metadata:{operationResult:{ok:true,status:200,data:{status:"OK",rows:[]}}}
+      }}}),{status:200,headers:{"content-type":"application/json"}});
+    };`);
+    const script=resolve("a2a/commercial-autopilot.mjs");
+    const env={...process.env,HOME:home};
+    const run=()=>spawnSync(process.execPath,["--import",mock,script,"--run"],{env,encoding:"utf8",timeout:10000});
+    const first=run();
+    assert.equal(first.status,0,first.stderr);
+    assert.match(first.stdout,/MARS commercial operation: find_counterparty TASK_STATE_COMPLETED/);
+    const state=JSON.parse(await readFile(join(dir,"commercial-autopilot-state.json"),"utf8"));
+    assert.equal(state.operations.MARS_B2B_BROKER_SCHEMA_REPAIR_V2.status,"TASK_STATE_COMPLETED");
+    assert.equal(state.operations.MARS_B2B_BROKER_SCHEMA_REPAIR_V2.input.item_type,"DEMAND");
+    const second=run();
+    assert.equal(second.status,0,second.stderr);
+    assert.doesNotMatch(second.stdout,/MARS commercial operation:/);
   } finally { await rm(home,{recursive:true,force:true}); }
 });
