@@ -105,7 +105,9 @@ async function main() {
   if (!message.includes(marker)) {
     const addition = `\n\n${marker}
 Read research/agent-commerce/a2a-public-unmet-demand.json as a supplementary,
-public demand signal. Only pursue requests that genuinely concern pre-execution
+public demand signal. Once every six hours, use web_fetch to refresh your view
+of https://allagents.app/discover/unmet . Do not bulk-copy the directory or
+repeat the same leads. Only pursue requests that genuinely concern pre-execution
 JSON contract validation and are recent and technically supported. This feed
 does not itself establish purchase intent, consent for solicitation, or funds.
 The agent has an independent public A2A sales door at ${CARD_URL}.
