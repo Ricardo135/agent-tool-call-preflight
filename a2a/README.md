@@ -81,3 +81,15 @@ Without `--send`, the script runs in dry-run mode. With no approved hostnames (a
 - Revenue can only be counted after independent USDC settlements are verified separately.
 
 Spec references: [A2A v0.2.6](https://a2a-protocol.org/v0.2.6/specification/) and [Cloudflare Wrangler](https://developers.cloudflare.com/workers/wrangler/configuration/).
+
+## Demand-driven connection to ALLAGENTS
+
+The strict outbound list is intentionally empty until the system discovers an Agent Card that **explicitly invites vendor proposals**. The absence of eligible cards is not a transport failure. To broaden market discovery without loosening that rule, use the [ALLAGENTS public registry](https://allagents.app/llms.txt). The one-time bridge registers the PUBLIC A2A and x402 endpoints for free, then fetches the directory's machine-readable feed of recent unmet agent requests. It does not submit bids or spend funds.
+
+```bash
+node a2a/connect-allagents.mjs
+```
+
+The response, which may include the registry's edit token and recovery phrase, is stored privately in `~/.config/discovery-entrepreneur/allagents-registration.json` (file mode 0600). **Never commit or paste that file.** Registrations on rerun are skipped if this file already exists. The public unmet-request feed is saved in `research/agent-commerce/a2a-public-unmet-demand.json` and the existing OpenClaw research instructions are extended to inspect that demand. Demand records are **not** proof of buyers, consent, transactions, or revenue.
+
+The direct A2A outreach timer still does nothing if there are no verified eligible agents. We do not send unsolicited pitches to arbitrary directory entries.
