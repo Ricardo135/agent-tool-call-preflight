@@ -43,6 +43,7 @@ function card(origin) {
   };
 }
 function quote(inquiry = {}) {
+  if (!isObject(inquiry)) return { decision: "invalid_request", noCommitment: true };
   const requested = inquiry.service ?? inquiry.product ?? "preflight";
   if (typeof requested !== "string" || !/^(preflight|tool-call-preflight|json-contract-validation)$/i.test(requested)) {
     return { decision: "unsupported_service", product: PRODUCT, availableService: "preflight", noCommitment: true };
