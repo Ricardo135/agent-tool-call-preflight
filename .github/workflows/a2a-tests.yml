@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+      - run: bash -n a2a/activate.sh
       - run: node --check a2a/worker.mjs
       - run: node --check a2a/outreach.mjs
       - run: node --test a2a/worker.test.mjs
+      - run: node a2a/outreach.mjs
