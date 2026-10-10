@@ -22,6 +22,14 @@ const DOCS = "https://github.com/Ricardo135/agent-tool-call-preflight";
 const ALLOWED_MARS = new Set(["find_counterparty", "discover_buyer_demand", "qualify_buyer_demand", "match_verified_suppliers"]);
 const OPT_IN_TAGS = new Set(["vendor-proposals", "supplier-inquiries", "partner-proposals", "partnership-inquiries", "external-provider-submissions"]);
 const SIX_HOURS = 21600000;
+// Cycle through concrete, truthful buyer-demand searches rather than an empty input.
+const MARKET_QUERIES = [
+  "AI agent tool-call JSON schema validation",
+  "structured JSON tool arguments validation",
+  "AI agent API contract preflight",
+  "JSON tool-call input validation before execution"
+];
+const DISCOVERY_QUERY_VERSION = 1;
 const ONE_DAY = 86400000;
 const FOUR_HOURS = 14400000;
 const DRY = !process.argv.includes("--run");
@@ -134,17 +142,25 @@ async function main() {
   }
   try {
     const updates = [];
-    if (!state.lastDiscoveryAt || Date.now() - Date.parse(state.lastDiscoveryAt) > SIX_HOURS) {
+    // A version change rechecks immediately after the previous QUERY_REQUIRED response.
+    if (state.discoveryQueryVersion !== DISCOVERY_QUERY_VERSION ||
+        !state.lastDiscoveryAt || Date.now() - Date.parse(state.lastDiscoveryAt) > SIX_HOURS) {
+      const query = MARKET_QUERIES[(state.discoveryCycle || 0) % MARKET_QUERIES.length];
+      state.discoveryQueryVersion = DISCOVERY_QUERY_VERSION;
+      state.discoveryCycle = (state.discoveryCycle || 0) + 1;
+      state.lastDiscoveryQuery = query;
       state.lastDiscoveryAt = new Date().toISOString();
       await writeJson(STATE,state); // Record attempt before outbound to prevent loops.
       try {
-        const resp = summarizeMars(await runMars("discover_buyer_demand",{}));
-        const record = {at:state.lastDiscoveryAt,channel:"mars",action:"discover_buyer_demand",reply:resp};
+        const resp = summarizeMars(await runMars("discover_buyer_demand",{query}));
+        const record = {at:state.lastDiscoveryAt,channel:"mars",action:"discover_buyer_demand",query,reply:resp};
         updates.push(record);
         state.lastDiscovery = record;
         console.log("MARS demand discovery:",resp.state || resp.operationStatus || "unknown");
       } catch(e) {
-        updates.push({at:state.lastDiscoveryAt,channel:"mars",error:String(e).slice(0,300)});
+        const record = {at:state.lastDiscoveryAt,channel:"mars",action:"discover_buyer_demand",query,error:String(e).slice(0,300)};
+        state.lastDiscovery = record;
+        updates.push(record);
         console.log("MARS discovery deferred:",String(e).slice(0,150));
       }
       await writeJson(STATE,state);
