@@ -23,6 +23,7 @@ const ALLOWED_MARS = new Set(["find_counterparty", "discover_buyer_demand", "qua
 const OPT_IN_TAGS = new Set(["vendor-proposals", "supplier-inquiries", "partner-proposals", "partnership-inquiries", "external-provider-submissions"]);
 const SIX_HOURS = 21600000;
 const ONE_DAY = 86400000;
+const FOUR_HOURS = 14400000;
 const DRY = !process.argv.includes("--run");
 
 async function readJson(path, fallback) {
@@ -148,17 +149,17 @@ async function main() {
       }
       await writeJson(STATE,state);
     }
-    // A maximum of ONE new commercial outbound plan action every 24 hours.
-    // Discovery queries have a separate no-messaging cadence.
-    if (!state.lastActionAt || Date.now()-Date.parse(state.lastActionAt)>ONE_DAY) {
-      for (const a of actions) {
+    // Broker queries can run every 4 hours; independent relay contacts at most
+    // one per day. Deduplicate each planned operation by immutable action ID.
+    for (const a of actions) {
         if (state.operations[a.id]) continue;
         if (a.channel === "mars") {
+          if (state.lastMarsActionAt && Date.now()-Date.parse(state.lastMarsActionAt)<FOUR_HOURS) continue;
           if (!ALLOWED_MARS.has(a.operation)) continue;
           const input = safePlanInput(a.input);
           if (!input) continue;
-          state.lastActionAt = new Date().toISOString();
-          state.operations[a.id] = {at:state.lastActionAt,channel:"mars",action:a.operation,status:"attempted",rationale:a.rationale,evidence:a.evidence};
+          state.lastMarsActionAt = new Date().toISOString();
+          state.operations[a.id] = {at:state.lastMarsActionAt,channel:"mars",action:a.operation,status:"attempted",rationale:a.rationale,evidence:a.evidence};
           await writeJson(STATE,state);
           try {
             const result = summarizeMars(await runMars(a.operation,input));
@@ -174,21 +175,25 @@ async function main() {
           await writeJson(STATE,state);break;
         }
         if (a.channel === "allagents-relay") {
+          if (state.lastRelayAt && Date.now()-Date.parse(state.lastRelayAt)<ONE_DAY) continue;
           const to = a.to;
           const body= a.text;
           if (typeof to!=="string" || !/^[a-z0-9-]{4,80}$/.test(to) || typeof body!=="string" || body.length>500 || body.length<50 ||
-              !/preflight|validation|tool.call|json/i.test(body) || state.relayTargets[to]) continue;
+              !/preflight|validation|tool.call|json/i.test(body)) continue;
+          const prev = state.relayTargets[to];
+          if (prev && (prev.count >= 3 || !prev.answered || Date.now()-Date.parse(prev.lastAt)<ONE_DAY)) continue;
           const registration=await readJson(CFG,null);
           if (!registration) { console.log("No directory registration; relay deferred");break; }
           // Reserve quota BEFORE network call and don't replay on ambiguous timeout.
-          state.lastActionAt = new Date().toISOString();
-          state.operations[a.id]={at:state.lastActionAt,channel:"allagents-relay",to,status:"attempted",evidence:a.evidence};
-          state.relayTargets[to] = state.lastActionAt;
+          state.lastRelayAt = new Date().toISOString();
+          state.operations[a.id]={at:state.lastRelayAt,channel:"allagents-relay",to,status:"attempted",evidence:a.evidence};
+          state.relayTargets[to] = {lastAt:state.lastRelayAt,count:(prev?.count||0)+1,answered:false};
           await writeJson(STATE,state);
           try {
             const reply=await runRelay(to,body,registration);
             state.operations[a.id].status="response_received";
             state.operations[a.id].reply=JSON.stringify(reply).slice(0,5000);
+            state.relayTargets[to].answered = Boolean(reply?.reply || reply?.result || reply?.response);
             updates.push({id:a.id,...state.operations[a.id]});
             console.log("ALLAGENTS direct message delivered (not a sale):",to);
           } catch(e) {
@@ -198,7 +203,6 @@ async function main() {
           }
           await writeJson(STATE,state);break;
         }
-      }
     }
     const safeState={
       generatedAt:new Date().toISOString(),
