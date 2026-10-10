@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { resolve, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
+import { lookup } from "node:dns/promises";
 
 const BASE = resolve(homedir(), ".openclaw/workspace/research/agent-commerce");
 const TARGETS = resolve(process.env.A2A_TARGETS_FILE || resolve(BASE, "a2a-consented-targets.json"));
@@ -13,16 +14,42 @@ const STATE = resolve(process.env.A2A_OUTREACH_STATE || resolve(BASE, "a2a-outre
 const ALLOWED = new Set((process.env.A2A_ALLOWED_HOSTS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean));
 const OPTIN_TAGS = new Set(["vendor-proposals", "supplier-inquiries", "partner-proposals", "partnership-inquiries", "external-provider-submissions"]);
 const SEND = process.argv.includes("--send");
+const AUTO = process.env.A2A_AUTO_OPTIN === "1";
 const DAY = 86_400_000;
 
-function safeUrl(text) {
+async function safeUrl(text) {
   if (typeof text !== "string") throw new Error("Missing target card URL");
   const u = new URL(text);
   const h = u.hostname.toLowerCase();
   if (u.protocol !== "https:" || u.username || u.password || u.port !== "" || isIP(h) || h === "localhost" || h.endsWith(".local") || h.endsWith(".internal")) throw new Error("Unsafe target URL");
-  if (!ALLOWED.has(h)) throw new Error("Not on operator-approved hostname list: " + h);
+  if (!ALLOWED.has(h) && !AUTO) throw new Error("Not on operator-approved hostname list: " + h);
+  if (!ALLOWED.has(h) && AUTO) {
+    // Autonomy is restricted to public HTTPS hosts and separately verified opt-in cards.
+    const records = await lookup(h, { all: true });
+    if (!records.length || records.some(({ address }) => !isPublicAddress(address)))
+      throw new Error("DNS did not resolve exclusively to globally routable addresses");
+  }
   if (u.pathname !== "/.well-known/agent.json" && u.pathname !== "/.well-known/agent-card.json") throw new Error("Target must be an Agent Card");
+  if (u.search || u.hash) throw new Error("Agent Card URL cannot contain query or fragment");
   return u;
+}
+function isPublicAddress(ip) {
+  if (isIP(ip) === 4) {
+    const [a,b,c] = ip.split(".").map(Number);
+    return !(a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && (b === 168 || (b === 0 && c === 0))) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      (a === 192 && b === 0 && c === 2) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113));
+  }
+  if (isIP(ip) === 6) {
+    return /^[23][0-9a-f]{0,3}:/i.test(ip) && !ip.toLowerCase().startsWith("2001:db8:");
+  }
+  return false;
 }
 async function getJson(url, options) {
   const res = await fetch(url, {
@@ -56,14 +83,14 @@ async function main() {
   const state = await loadJson(STATE, { lastSentAt: null, contacted: {} });
   if (!Array.isArray(targets) || typeof state.contacted !== "object" || !state.contacted) throw new Error("Invalid queue/state");
   if (!SEND) {
-    console.log(JSON.stringify({ mode: "dry-run", queued: targets.length, allowedHosts: [...ALLOWED], note: "Pass --send to contact ONE explicitly opt-in agent." }));
+    console.log(JSON.stringify({ mode: "dry-run", queued: targets.length, allowedHosts: [...ALLOWED], autoOptIn: AUTO, note: "Pass --send to contact ONE explicitly opt-in agent." }));
     return;
   }
-  if (ALLOWED.size === 0) { console.log("No approved hosts. Nothing sent."); return; }
+  if (ALLOWED.size === 0 && !AUTO) { console.log("No approved hosts. Nothing sent."); return; }
   if (state.lastSentAt && Date.now() - Date.parse(state.lastSentAt) < DAY) { console.log("Global 24-hour cooldown. Nothing sent."); return; }
   for (const t of targets.slice(0, 50)) {
     try {
-      const url = safeUrl(t.cardUrl);
+      const url = await safeUrl(t.cardUrl);
       if (typeof t.fit !== "string" || t.fit.length < 20 || t.fit.length > 350) continue;
       if (state.contacted[url.origin]) continue; // Only one contact per host, ever.
       const card = await getJson(url.href);
