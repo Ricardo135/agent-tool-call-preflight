@@ -1,0 +1,23 @@
+name: A2A interface tests
+on:
+  push:
+    paths:
+      - "a2a/**"
+      - ".github/workflows/a2a-tests.yml"
+  pull_request:
+    paths:
+      - "a2a/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node --check a2a/worker.mjs
+      - run: node --check a2a/outreach.mjs
+      - run: node --test a2a/worker.test.mjs
