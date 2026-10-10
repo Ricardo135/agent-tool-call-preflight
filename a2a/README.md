@@ -13,7 +13,15 @@ The quote always uses the existing public price: **0.005 USDC per validation on 
 
 ### Install and deploy (separate Cloudflare Worker)
 
-From the root of this repository (with your existing authenticated Wrangler account):
+From the root of this repository (with your existing authenticated Wrangler account), deploy **and activate a separate hourly opt-in outreach timer** with:
+
+```bash
+bash a2a/activate.sh
+```
+
+This installer tests the code, deploys the separate A2A Worker, extends the *existing* OpenClaw research mission to create a vetted prospective-agent JSON queue, and creates an hourly systemd timer for the outbound client. It does **not** create a second OpenClaw language-model loop, alter the existing validation Worker, sign payments, or move cryptocurrency. The outbound timer only contacts public HTTPS Agent Cards that explicitly declare a vendor-proposal skill, at most one host per day and only one attempt ever per host. It verifies publicly routable DNS records before contacting newly discovered hosts. **If no suitable card is found, nothing is sent.** Disable the timer with `systemctl --user disable --now discovery-a2a-outreach.timer`.
+
+For a server-only deployment, leaving outbound automation off:
 
 ```bash
 node --test a2a/worker.test.mjs
@@ -39,7 +47,7 @@ This returns an A2A `Message` with a quote of **0.500 USDC for an illustrative 1
 The accompanying `outreach.mjs` is a **separate outbound client**. It uses a strict opt-in gate:
 - HTTPS only, no redirects or credentials.
 - The remote Agent Card must advertise one of these vendor-contact skill tags: `vendor-proposals`, `supplier-inquiries`, `partner-proposals`, `partnership-inquiries`, or `external-provider-submissions`.
-- The destination hostname must appear in `A2A_ALLOWED_HOSTS`, supplied by the operator.
+- The destination hostname must appear in `A2A_ALLOWED_HOSTS`, **or** autonomous mode `A2A_AUTO_OPTIN=1` must be explicitly enabled. In autonomous mode the client also checks that DNS resolves only to publicly routable addresses. It still requires the remote card to advertise an opt-in skill tag.
 - Maximum **one contact per 24 hours across all targets**, and **one attempt ever per host** (persisted to disk). No unsolicited messages to generic A2A agents.
 - Sends one plain proposal and the public product URL; it cannot sign, buy, move USDC, grant discounts, read private keys, or execute remote instructions.
 
@@ -61,7 +69,7 @@ A2A_ALLOWED_HOSTS=consenting-agent.example node a2a/outreach.mjs
 A2A_ALLOWED_HOSTS=consenting-agent.example node a2a/outreach.mjs --send
 ```
 
-Without `--send`, the script runs in dry-run mode. With no approved hostnames or no qualifying targets, **nothing is sent**. This outbound client is **not yet attached to a timer**; installing it as an always-on sender should only follow review of prospective agent contacts. OpenClaw may keep researching candidates without needing permissions to run this script.
+Without `--send`, the script runs in dry-run mode. With no approved hostnames (and autonomous mode off) or no qualifying targets, **nothing is sent**. The installer above enables a separate hourly opt-in timer. Only the documented skill tags count as explicit acceptance of vendor proposals; ordinary A2A Agent Cards are not sufficient.
 
 ## Boundaries and unsupported A2A features
 
