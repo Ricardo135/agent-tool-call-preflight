@@ -93,3 +93,28 @@ node a2a/connect-allagents.mjs
 The response, which may include the registry's edit token and recovery phrase, is stored privately in `~/.config/discovery-entrepreneur/allagents-registration.json` (file mode 0600). **Never commit or paste that file.** Registrations on rerun are skipped if this file already exists. The public unmet-request feed is saved in `research/agent-commerce/a2a-public-unmet-demand.json` and the existing OpenClaw research instructions are extended to inspect that demand. Demand records are **not** proof of buyers, consent, transactions, or revenue.
 
 The direct A2A outreach timer still does nothing if there are no verified eligible agents. We do not send unsolicited pitches to arbitrary directory entries.
+
+## Discovery Entrepreneur 4.0: autonomous sales operator (real inbound USDC)
+
+The **live** x402 validation Worker already accepts third-party Base Mainnet USDC payments at **0.005 USDC per validation**. No manual approval is needed for a paying buyer to call it. Incoming funds are paid through the existing x402 flow to the already configured seller address; the autonomous sales operator cannot sign or move wallet funds.
+
+To activate a **separate** server-side executor (while keeping the existing OpenClaw supervisor), run from the checkout:
+
+```bash
+bash a2a/activate-autonomous-sales.sh
+```
+
+This extends the existing OpenClaw mission, rather than creating a duplicate large-model loop. OpenClaw is responsible for deciding how to pursue evidence-backed demand and writing `research/agent-commerce/commercial-deal-actions.json`. An hourly systemd service executes bounded broker A2A operations and opt-in ALLAGENTS relay actions, persists deduplicated IDs, and sends new results to `research/agent-commerce/commercial-autopilot-signals.json`. Even without a plan, it periodically attempts an A2A read of MARS' `discover_buyer_demand` operation and records responses.
+
+The broker offer ID is `off_5e8a3cd5-f6dc-4b36-a37a-4a61eb9e8695`, last seen `QUARANTINED_PENDING_REVIEW`. **Do not repost duplicate offers.** The operator may help find matches, but neither its own inquiries nor its listings imply a buyer, an agreement, or a USDC settlement.
+
+Controls: fixed selling price; only four documented marketplace discovery/matching actions; other-agent relay requires public opt-in RFQ/supplier-capability evidence (the MARS intermediary is explicitly supported); one broker plan action per four hours, one relay per 24h, at most three relay messages per consented target, and only if it replied may the operator follow up. All untrusted responses are recorded as data, not executed as instructions. No trade, outgoing payment, signing, discount, purchase, mandate, or commission commitment is permitted by the executor. An explicit spending limit would be required before allowing real *outgoing* expenses.
+
+**Operational caveat:** This is a commercial workflow, not a guaranteed revenue machine. It remains active only while the user's Ubuntu/OpenClaw services run. The actual independent on-chain settlements must be checked separately; creating a quote or an offer is not a sale.
+
+Check (without revealing any keys or ALLAGENTS tokens):
+
+```bash
+systemctl --user is-active discovery-entrepreneur.service discovery-commercial-autopilot.timer
+journalctl --user -u discovery-commercial-autopilot.service -n 15 --no-pager
+```
