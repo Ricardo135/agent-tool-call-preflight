@@ -52,3 +52,12 @@ test("rejects overly large bodies", async () => {
   });
   assert.equal(response.status, 413);
 });
+
+test("malformed quote payload is rejected without a server exception", async () => {
+  const response = await call("/quote", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: "null"
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).decision, "invalid_request");
+});
