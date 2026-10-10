@@ -1,3 +1,4 @@
+import "./commercial-autopilot.test.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "./worker.mjs";
