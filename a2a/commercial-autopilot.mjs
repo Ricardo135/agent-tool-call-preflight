@@ -32,6 +32,9 @@ const MARKET_QUERIES = [
 const DISCOVERY_QUERY_VERSION = 1;
 const ONE_DAY = 86400000;
 const FOUR_HOURS = 14400000;
+const MARS_FIND_SCHEMA_VERSION = 2;
+const BROKER_LEGACY_ID = "MARS_B2B_BROKER_INIT_20261010";
+const BROKER_REPAIR_ID = "MARS_B2B_BROKER_SCHEMA_REPAIR_V2";
 const DRY = !process.argv.includes("--run");
 
 async function readJson(path, fallback) {
@@ -48,17 +51,36 @@ function object(x) { return x && typeof x === "object" && !Array.isArray(x); }
 function plainText(x, max = 500) { return typeof x === "string" ? x.slice(0, max) : ""; }
 function safePlanInput(x) {
   if (!object(x) || JSON.stringify(x).length > 1800) return null;
-  const allowed = ["subject","query","offer_id","offer_item_id","item_id","buyer_demand_id","capability","keywords","currency","need","limit"];
+  const allowed = ["subject","query","item_type","offer_id","offer_item_id","item_id","buyer_demand_id","capability","keywords","currency","need","limit"];
   const clean = {};
   for (const k of allowed) {
     if (!(k in x)) continue;
     const v = x[k];
     if (k === "limit" && Number.isSafeInteger(v) && v >= 1 && v <= 10) clean[k] = v;
     else if (k === "currency" && v === "USD") clean[k] = "USD";
+    else if (k === "item_type" && (v === "DEMAND" || v === "OFFER")) clean[k] = v;
     else if (Array.isArray(v) && k === "keywords" && v.length <= 8 && v.every(z=>typeof z==="string"&&z.length<=60)) clean[k] = v;
     else if (typeof v === "string" && v.length >= 1 && v.length <= 500) clean[k] = v;
   }
   return clean;
+}
+// MARS find_counterparty input contract is query, item_type, limit.
+function prepareBrokerInput(operation, candidate) {
+  const clean = safePlanInput(candidate);
+  if (!clean) return null;
+  if (operation !== "find_counterparty") return clean;
+  // Old plans used subject + offer_item_id, which this search API does NOT accept.
+  // This is a READ of reviewed public buyer demand, not a sale or buyer contact.
+  const q = clean.query || "JSON tool-call input validation";
+  if (typeof q !== "string" || q.trim().length < 5) return null;
+  return {query:q.slice(0,200),item_type:"DEMAND",limit:5};
+}
+function marsFailureCode(result) {
+  if (result?.operationOk !== false && result?.state !== "TASK_STATE_FAILED") return null;
+  let data;
+  try { data=JSON.parse(result.operationResult || "null"); } catch { data=null; }
+  const candidates=[data?.error,data?.status,...(Array.isArray(data?.errors)?data.errors:[])].filter(x=>typeof x==="string");
+  return candidates.find(x=>x !== "REJECTED" && x !== "ERROR") || "REMOTE_OPERATION_FAILED";
 }
 function publicAgentMatch(card) {
   const data = card?.agent || card;
@@ -167,22 +189,36 @@ async function main() {
     }
     // Broker queries can run every 4 hours; independent relay contacts at most
     // one per day. Deduplicate each planned operation by immutable action ID.
-    for (const a of actions) {
+    // Automatically recover ONE legacy schema error that happened before this version.
+    // Never retry a completed or unknown action, and never create a second offer.
+    const old = state.operations[BROKER_LEGACY_ID];
+    const repairDue = old?.status === "TASK_STATE_FAILED" && !state.operations[BROKER_REPAIR_ID];
+    const effectiveActions = repairDue ? [{
+      id:BROKER_REPAIR_ID,channel:"mars",operation:"find_counterparty",
+      input:{query:"AI agent JSON tool-call preflight validation",item_type:"DEMAND",limit:5},
+      rationale:"One-time schema-corrected public demand search after rejected legacy broker request.",
+      evidence:"https://glama.ai/mcp/connectors/dev.workers.mars-economic.mars-economic-agent-gateway/mars-economic"
+    },...actions] : actions;
+    for (const a of effectiveActions) {
         if (state.operations[a.id]) continue;
         if (a.channel === "mars") {
-          if (state.lastMarsActionAt && Date.now()-Date.parse(state.lastMarsActionAt)<FOUR_HOURS) continue;
+          const correction = a.id === BROKER_REPAIR_ID && state.marsFindSchemaVersion !== MARS_FIND_SCHEMA_VERSION;
+          if (!correction && state.lastMarsActionAt && Date.now()-Date.parse(state.lastMarsActionAt)<FOUR_HOURS) continue;
           if (!ALLOWED_MARS.has(a.operation)) continue;
-          const input = safePlanInput(a.input);
+          const input = prepareBrokerInput(a.operation,a.input);
           if (!input) continue;
           state.lastMarsActionAt = new Date().toISOString();
-          state.operations[a.id] = {at:state.lastMarsActionAt,channel:"mars",action:a.operation,status:"attempted",rationale:a.rationale,evidence:a.evidence};
+          if (correction) state.marsFindSchemaVersion = MARS_FIND_SCHEMA_VERSION;
+          state.operations[a.id] = {at:state.lastMarsActionAt,channel:"mars",action:a.operation,input,status:"attempted",rationale:a.rationale,evidence:a.evidence};
           await writeJson(STATE,state);
           try {
             const result = summarizeMars(await runMars(a.operation,input));
             state.operations[a.id].status=result.state || "response_received";
             state.operations[a.id].reply=result;
+            const failure = marsFailureCode(result);
+            if (failure) state.operations[a.id].failureCode = failure;
             updates.push({id:a.id,...state.operations[a.id]});
-            console.log("MARS commercial operation:",a.operation,state.operations[a.id].status);
+            console.log("MARS commercial operation:",a.operation,state.operations[a.id].status,failure || "");
           } catch(e) {
             state.operations[a.id].status="network_error";
             state.operations[a.id].error=String(e).slice(0,250);
