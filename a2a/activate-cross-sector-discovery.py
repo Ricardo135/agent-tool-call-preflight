@@ -36,6 +36,32 @@ sector leads are buyer qualification only. You still select leads yourself.
 """.strip()
 
 
+MARKET_DISCOVERY_MARKER = "DISCOVERY AGENT-SELECTED MARKET SEARCHES V1"
+MARKET_DISCOVERY_ADDENDUM = """
+DISCOVERY AGENT-SELECTED MARKET SEARCHES V1
+YOU select which sectors, markets and demands to investigate using public
+sources. Your MARS demand-search executor no longer repeats endless hard-coded
+JSON validation queries. To submit YOUR OWN researched query, write EXACTLY:
+research/agent-commerce/market-demand-plan.json
+{"queries":[
+  {"query":"a focused buyer-demand query of 10-180 characters",
+   "evidence":"https://public.example/real/relevant/source",
+   "rationale":"At least 20 characters explaining why this query is warranted.",
+   "status":"search"}
+]}
+Use only current independently researched PUBLIC evidence. You decide and
+rotate sectors; nobody else selects them. The query is discovery, NOT proof
+of an interested buyer. Maximum five active queries, deduplicate, avoid
+stale/disqualified candidates. Keep this plan intentionally empty
+{"queries":[]} if no justified MARS inquiry exists; concentrate instead on
+other appropriate public sources and permitted opt-in sales channels.
+The executor will discover new or updated query plans automatically,
+without another terminal command. It prevents repeat empty legacy searches.
+Do not claim a lead, contract, financial settlement or new product exists
+from a market search result alone.
+""".strip()
+
+
 MISSION = """
 DISCOVERY ENTREPRENEUR 5.0 — AUTONOMOUS CROSS-SECTOR MARKET DISCOVERY
 
@@ -133,20 +159,22 @@ def main():
         raise RuntimeError("Expected existing OpenClaw mission not found; no changes made")
 
     ROOT.mkdir(parents=True, exist_ok=True)
-    if QUALIFICATION_MARKER in original:
-        print("Cross-sector discovery and buyer qualification already installed.")
+    if MARKET_DISCOVERY_MARKER in original:
+        print("Cross-sector discovery, qualification, and self-selected market queries already installed.")
     else:
         if not BACKUP.exists():
             with BACKUP.open("x") as f:
                 f.write(original + "\n")
             BACKUP.chmod(0o600)
         updated = (original if MARKER in original else MISSION).rstrip()
-        updated += "\n\n" + QUALIFICATION_ADDENDUM
+        if QUALIFICATION_MARKER not in updated:
+            updated += "\n\n" + QUALIFICATION_ADDENDUM
+        updated += "\n\n" + MARKET_DISCOVERY_ADDENDUM
         subprocess.run(
             ["openclaw", "cron", "edit", JOB_ID, "--message", updated],
             check=True, timeout=45, stdout=subprocess.DEVNULL
         )
-        print("Updated EXISTING OpenClaw mission: cross-sector discovery and opt-in buyer qualification.")
+        print("Updated EXISTING OpenClaw mission with self-selected cross-sector market queries.")
         print("Previous mission backed up locally without exposing its contents.")
 
     # The already-existing continuous supervisor invokes this job;
