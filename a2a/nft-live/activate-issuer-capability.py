@@ -21,8 +21,12 @@ estimate and candidate price. Use 'node a2a/nft-live/issuer.mjs prepare
 The human owner controls the isolated execution session required to
 deploy, mint, approve and list via OpenSea. Do NOT invoke --execute,
 --confirm, wallet signing, pin publication or API keys from OpenClaw or
-from any background task. No preauthorized spending or automated NFT
-transaction capability is granted. Do not copy wallet keys into the
+from any background task. A total NFT fee budget of MXN 100 is owner-approved, but ONLY for
+future transactions in the separate owner-operated issuer: each actual
+deploy/mint/approval still requires an explicit operator confirmation;
+the issuer enforces cumulative reservations, current ETH/MXN prices,
+and Base L1/operator fees. No autonomous wallet signing or automatic
+NFT expenditure is enabled. Do not copy wallet keys into the
 research workspace; use an owner-created, dedicated signer, never the
 legacy x402 receiving wallet. Record status as 'ready_for_owner_approval'
 only when original/explicitly licensed rights, real IPFS image and
