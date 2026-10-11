@@ -7,7 +7,8 @@ This is an **actual, operator-controlled** ERC-721 contract deploy/mint/listing 
 - New dedicated wallet on Base, under the owner's control, funded with a *small* amount of ETH for gas, **never the exposed legacy x402 wallet**. No keys in chat, files under GitHub, OpenClaw workspace or terminal commands preserved in history.
 - A private HTTPS Base RPC provider URL, an OpenSea API key, Node 20+, and npm dependencies.
 - Artwork you own or have explicit rights to mint and sell, published on IPFS; metadata JSON already pinned to IPFS. Name, description, image link, license terms must be accurate and public. IPFS persistence requires pinning arrangements.
-- Manual confirmation for every deployment, mint, approval and listing, and a gas cap chosen by the owner. No owner spending budget was previously granted, so this module never auto-executes.
+- **Approved NFT fee allowance:** MXN 100 **total lifetime**, not per operation; the hardcoded software gate also permits at most 0.0001 ETH **per on-chain transaction**. It converts ETH gas estimates into MXN using a fresh CoinGecko ETH/MXN rate, reserves 25% FX margin and double the estimated Base L1 and operator components, and fails closed when any rate/fee input is missing. A new human authorization is necessary to raise either limit.
+- Manual confirmation for every deployment, mint, approval and listing. The MXN 100 authorization does **not** enable unattended wallets or signing by OpenClaw.
 
 **The smart contract has not been externally audited.** OpenZeppelin components reduce risk but do not establish full contract security.
 
@@ -22,6 +23,7 @@ git pull --ff-only
 cd a2a/nft-live
 npm install
 npm test
+node issuer.mjs status
 ```
 
 For deployment, avoid entering a key in shell history; use a separate, trusted owner session and preferably hardware-backed signing. The basic CLI currently supports a dedicated local-account signer supplied through the **temporary operator shell environment**; this key is necessarily accessible to that process, so **do not run it with OpenClaw's agent tools and do not leave it in a daemon's environment**.
@@ -29,13 +31,15 @@ For deployment, avoid entering a key in shell history; use a separate, trusted o
 ```bash
 export NFT_BASE_RPC_URL='https://YOUR_TRUSTED_BASE_RPC_ENDPOINT'
 export NFT_OPENSEA_API_KEY='YOUR_OPENSEA_API_KEY'
-export NFT_MAX_GAS_ETH='0.0001'
+export NFT_MAX_GAS_ETH='0.0001' # must not exceed this approved ceiling
 export NFT_ENABLE_EXECUTION='I_AUTHORIZE_NFT_TRANSACTIONS'
 read -rsp 'Dedicated NFT operator private key (0x...): ' NFT_SIGNER_PRIVATE_KEY; echo
 export NFT_SIGNER_PRIVATE_KEY
 ```
 
-Never paste the key into ChatGPT or GitHub. Use your **own estimate and balance** before funding the dedicated wallet. `NFT_MAX_GAS_ETH` applies per transaction, not to an unlimited series; it is not a daily budget or a profit guarantee.
+Never paste the key into ChatGPT or GitHub. Use your **own estimate and balance** before funding the dedicated wallet. The total authorized fee **ceiling is MXN 100**, implemented as conservative cumulative software reservations in `operations.json`, plus the smaller 0.0001 ETH ceiling per transaction. `NFT_MAX_GAS_ETH` is an additional per-transaction cap, never a way to increase the MXN 100 lifetime budget. The balance should be funded minimally, not beyond the intended amount.
+
+The price API is a **live quote** and cannot guarantee the eventual fiat value if crypto prices change. The budget is a restrictive internal estimate (not a smart-contract enforced allowance, bank limit, or tamper-proof spending boundary). It covers this tool's gas, including conservative Base L1/operator fee estimates; it excludes separate external charges such as exchange deposits, conversion spreads, marketplace commissions or optional Pinata fees. The ledger accounts for full **reserved maximum** even after transaction failure or timeout and does not automatically refund it. A missing ETH/MXN quote, missing fee oracle, changed wallet or missing historical reservation stops further sends. Do not reset/delete the ledger to bypass a cap.
 
 ## Publish NFT artwork and metadata to IPFS (optional)
 
@@ -92,7 +96,7 @@ node issuer.mjs status
 - **Approve:** authorizes **a single token only** for the publicly documented OpenSea conduit, with gas estimation/cap; never uses broad `setApprovalForAll`.
 - **List:** uses the official OpenSea viem SDK to sign and submit a listing at the asset's ETH price. It requires the prior token approval and a working API key. The SDK transport is blocked from broadcasting any additional blockchain transaction. Marketplace indexing, order acceptance, sales and actual receipts must be checked separately.
 
-State lives under `~/.config/discovery-entrepreneur/nft-live/operations.json` (mode 0600) with a single-writer lock. **An ambiguous timeout or crashed write is never automatically replayed.** Investigate the on-chain hash and OpenSea order first. Never delete or edit the ledger/lock just to force repeated spending or listing. If the operator key or wallet has been exposed, replace it and revoke approvals.
+State lives under `~/.config/discovery-entrepreneur/nft-live/operations.json` (mode 0600) with a single-writer lock. `node issuer.mjs status` reports the lifetime MXN 100 budget's reserved and remaining amount.  **An ambiguous timeout or crashed write is never automatically replayed.** Investigate the on-chain hash and OpenSea order first. Never delete or edit the ledger/lock just to force repeated spending or listing. If the operator key or wallet has been exposed, replace it and revoke approvals.
 
 Only run **one operator-issued command at a time**, in a separate trusted terminal. The CLI is not a secure financial sandbox against someone controlling the Linux user account or editing code. No continuous autonomous wallet signer is connected to the research loop.
 
