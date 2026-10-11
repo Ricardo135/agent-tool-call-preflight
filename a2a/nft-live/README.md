@@ -37,6 +37,26 @@ export NFT_SIGNER_PRIVATE_KEY
 
 Never paste the key into ChatGPT or GitHub. Use your **own estimate and balance** before funding the dedicated wallet. `NFT_MAX_GAS_ETH` applies per transaction, not to an unlimited series; it is not a daily budget or a profit guarantee.
 
+## Publish NFT artwork and metadata to IPFS (optional)
+
+Use a Pinata account with an owner-controlled JWT. First upload a locally owned image and note its real CID, then build a local JSON metadata file of the form:
+
+```json
+{"name":"Owned original #1","description":"Authentic original artwork with commercial mint/sale permission.","image":"ipfs://REAL_IMAGE_CID"}
+```
+
+In the owner-only shell:
+
+```bash
+read -rsp 'Pinata JWT: ' NFT_PINATA_JWT; echo
+export NFT_PINATA_JWT
+node pin.mjs image ./artwork.png --run
+node pin.mjs metadata ./metadata.json --run
+unset NFT_PINATA_JWT
+```
+
+These commands issue authenticated pin requests and print the IPFS URI. Replace the image CID in metadata with the **actual first response**, then replace `asset.json`'s token URI with the **actual second response**. The files must stay pinned and publicly accessible. No signatures, NFTs or listings are created by `pin.mjs`.
+
 ## Create and mint collection
 
 Example `collection.json`:
