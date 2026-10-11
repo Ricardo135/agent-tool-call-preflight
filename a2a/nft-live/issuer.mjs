@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { assert, validateCollection, validateAsset, validatePrice, executionAuthorized,
   maxGasWithinBudget, validAddress } from './policy.mjs';
 import {budgetReservation, budgetStatus, currentEthMxnQuote, MXN_MAX_PER_TX_ETH_WEI} from './budget.mjs';
+import { readWalletBinding } from './wallet-config.mjs';
 
 const ROOT = join(homedir(), '.config/discovery-entrepreneur/nft-live');
 const JOURNAL = join(ROOT,'operations.json');
@@ -46,6 +47,9 @@ async function operator() {
   const {privateKeyToAccount}=await import('viem/accounts');
   const {base}=await import('viem/chains');
   const account=privateKeyToAccount(process.env.NFT_SIGNER_PRIVATE_KEY);
+  const bound=await readWalletBinding();
+  assert(account.address.toLowerCase()===bound.address.toLowerCase(),
+    'Signer wallet does not match the separately bound NFT public wallet; aborted');
   // Don't reuse the exposed x402 wallet; use a dedicated, low-balance operator key.
   const rpc=process.env.NFT_BASE_RPC_URL;
   const publicClient=createPublicClient({chain:base,transport:http(rpc)});
@@ -230,7 +234,12 @@ async function main() {
   if(action==='status') {
     await mkdir(ROOT,{recursive:true,mode:0o700});
     const j=await json(JOURNAL,{operations:{}});
-    console.log(JSON.stringify({operationCount:Object.keys(j.operations||{}).length,budget:budgetStatus(j),operations:j.operations},null,2));return;
+    let boundWallet=null;
+    try {boundWallet=(await readWalletBinding()).address;}
+    catch(e) {if(!String(e.message).startsWith('No NFT public wallet bound.'))throw e;}
+    console.log(JSON.stringify({operationCount:Object.keys(j.operations||{}).length,
+      boundPublicWallet:boundWallet,signerConfigured:false,
+      budget:budgetStatus(j),operations:j.operations},null,2));return;
   }
   assert(path && path.endsWith('.json'),'explicit JSON manifest path required');
   const data=await readFile(path,'utf8');assert(data.length<32000,'manifest too large');
