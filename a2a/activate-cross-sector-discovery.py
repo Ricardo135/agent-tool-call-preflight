@@ -14,6 +14,27 @@ JOB_ID = "2cd2ce28-7033-4f4c-a66d-e088e2dfec9a"
 MARKER = "DISCOVERY ENTREPRENEUR 5.0 — AUTONOMOUS CROSS-SECTOR MARKET DISCOVERY"
 ROOT = pathlib.Path.home() / ".openclaw/workspace/research/agent-commerce"
 BACKUP = ROOT / "openclaw-mission-before-cross-sector.txt"
+QUALIFICATION_MARKER = "DISCOVERY CROSS-SECTOR BUYER QUALIFICATION V1"
+QUALIFICATION_ADDENDUM = """
+DISCOVERY CROSS-SECTOR BUYER QUALIFICATION V1
+When you identify a REAL public buyer need outside JSON preflight, and the
+specific ALLAGENTS target publicly accepts vendor/RFQ inquiries, you may write
+this supported plan action to commercial-deal-actions.json:
+{"actions":[{"id":"UNIQUE_IMMUTABLE_LEAD_ID",
+  "channel":"allagents-relay","purpose":"buyer-qualification",
+  "to":"real-consenting-directory-slug",
+  "buyerNeed":"precise 15-140 character factual need from public evidence",
+  "rationale":"why this exact published request warrants clarification",
+  "evidence":"https://public-specific-buyer-need-source"}]}
+The bounded executor constructs an honest NONBINDING qualification question
+itself. This is not permission to promise or sell a new service, claim that
+a product already exists, buy anything, sign agreements or charge money.
+Do not contact agents that do not explicitly welcome supplier/RFQ inquiries.
+Keep the existing one-contact-per-day and deduplication restrictions.
+Until a new verified deliverable and supported payment method exist, new
+sector leads are buyer qualification only. You still select leads yourself.
+""".strip()
+
 
 MISSION = """
 DISCOVERY ENTREPRENEUR 5.0 — AUTONOMOUS CROSS-SECTOR MARKET DISCOVERY
@@ -112,18 +133,20 @@ def main():
         raise RuntimeError("Expected existing OpenClaw mission not found; no changes made")
 
     ROOT.mkdir(parents=True, exist_ok=True)
-    if MARKER in original:
-        print("Cross-sector discovery mission already installed; no duplicate edit.")
+    if QUALIFICATION_MARKER in original:
+        print("Cross-sector discovery and buyer qualification already installed.")
     else:
         if not BACKUP.exists():
             with BACKUP.open("x") as f:
                 f.write(original + "\n")
             BACKUP.chmod(0o600)
+        updated = (original if MARKER in original else MISSION).rstrip()
+        updated += "\n\n" + QUALIFICATION_ADDENDUM
         subprocess.run(
-            ["openclaw", "cron", "edit", JOB_ID, "--message", MISSION],
+            ["openclaw", "cron", "edit", JOB_ID, "--message", updated],
             check=True, timeout=45, stdout=subprocess.DEVNULL
         )
-        print("Updated EXISTING OpenClaw mission to self-directed cross-sector discovery.")
+        print("Updated EXISTING OpenClaw mission: cross-sector discovery and opt-in buyer qualification.")
         print("Previous mission backed up locally without exposing its contents.")
 
     # The already-existing continuous supervisor invokes this job;
