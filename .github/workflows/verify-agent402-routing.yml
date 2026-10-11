@@ -1,0 +1,76 @@
+name: Check Agent402 buyer routing
+on:
+  push:
+    paths:
+      - ".github/workflows/verify-agent402-routing.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify our paid API is eligible and appears for buyer tasks (no payment)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import urllib.request
+          from urllib.parse import urlencode
+
+          HOST = "json-contract-checker-mainnet.romo-ricardo.workers.dev"
+          API = "https://agent402.tools"
+          def request(path, body=None):
+              payload = None if body is None else json.dumps(body).encode("utf-8")
+              req = urllib.request.Request(API + path, data=payload, headers={"Accept": "application/json", "Content-Type": "application/json"}, method="POST" if body is not None else "GET")
+              with urllib.request.urlopen(req, timeout=35) as response:
+                  data = response.read(2_000_000)
+              return json.loads(data.decode("utf-8"))
+          data = request("/api/index?" + urlencode({"seller": HOST}))
+          print("INDEX DATA KEYS:", sorted(data.keys()) if isinstance(data, dict) else type(data).__name__)
+          seller = data.get("seller") if isinstance(data, dict) else None
+          if not isinstance(seller, dict):
+              entries = data.get("sellers", []) if isinstance(data, dict) else []
+              if isinstance(entries, list):
+                  seller = next((e for e in entries if HOST in json.dumps(e)), None)
+          if seller is None and isinstance(data, dict) and HOST in json.dumps(data):
+              seller = data
+          indexed = seller is not None
+          print("INDEXED:", indexed)
+          if indexed:
+              for key in ["routable", "routerDispatchEligible", "routerDispatchReason", "health", "toolCount", "networks", "lastFetched"]:
+                  if key in seller:
+                      print(f"{key}: {seller[key]}")
+              routes = seller.get("routes") or seller.get("tools") or []
+              if isinstance(routes, list):
+                  for route in routes[:5]:
+                      if isinstance(route, dict):
+                          print("route:", json.dumps({k:route.get(k) for k in ["path", "url", "method", "priceUsd", "routerDispatchEligible", "routerDispatchReason", "declared", "lastVerifiedAt"] if k in route}))
+          with open("/tmp/agent402-summary.md", "w") as f:
+              f.write("## Agent402 seller and free routing check\n\n")
+              f.write(f"- Indexed: **{indexed}**\n")
+              for key in ("routable", "routerDispatchEligible", "routerDispatchReason", "health", "toolCount"):
+                  if isinstance(seller, dict) and key in seller:
+                      f.write(f"- {key}: **{seller[key]}**\n")
+          tasks = [
+              "validate JSON Schema for autonomous AI agent tool call arguments",
+              "preflight check JSON structured tool inputs before calling an API",
+          ]
+          for task in tasks:
+              data = request("/api/route", {"query": task, "top": 20, "include": "external"})
+              matches = data.get("results", []) if isinstance(data, dict) else []
+              ours = [r for r in matches if HOST in str(r.get("seller", "")) or HOST in str(r.get("url", ""))]
+              print("BUYER QUERY:", task)
+              print("RETURNED:", len(matches), "OUR_MATCHES:", len(ours))
+              for r in ours[:2]:
+                  print("OUR_ROUTE:", json.dumps({k:r.get(k) for k in ["name", "slug", "url", "score", "priceUsd", "routerDispatchEligible", "routerDispatchReason", "executeViaCallableNow"]}))
+              print("TOP_3:", json.dumps([{"name":r.get("name"), "seller":r.get("seller"), "score":r.get("score")} for r in matches[:3]]))
+              with open("/tmp/agent402-summary.md", "a") as f:
+                  f.write(f"- Query: {task}; our tool in top 20: **{bool(ours)}**\n")
+          print("No paid calls, wallet actions, contracts, outreach or chain transactions performed.")
+          PY
+          cat /tmp/agent402-summary.md >> "$GITHUB_STEP_SUMMARY"
