@@ -28,9 +28,11 @@ The checker only classifies reported candidate evidence. It does **not** verify 
 
 The existing x402 validation service is only a JSON contract preflight SKU. It is not an NFT minting, transfer, payment, escrow or marketplace checkout API.
 
-## Still blocked
+## Owner-operated mint and listing capability
 
-Minting, contract deployments, NFT resale, wallet signatures, gas spending, marketplace listing, asset transfer, new accounts and unsupported delivery promises. The outgoing budget is still **0 USDC**. No NFTs are owned, listed or sold merely because this module is installed. Real NFT sales require licensed assets, marketplace or other authorized sales channel, verified payment and delivery, transaction costs and approved wallet permissions.
+A separate, owner-gated production toolkit has now been added under [a2a/nft-live/](nft-live/README.md): contract compilation and deployment, ERC-721 minting with IPFS metadata, one-token OpenSea conduit approval and signed OpenSea sale listing. The user must provide a fresh, dedicated signer, Base gas allowance, properly licensed artwork, pinned metadata, RPC and OpenSea API key. It has **not been deployed or enabled on the owner's WSL yet**. No crypto transactions were broadcast by this integration. The tool must only be run from a separate trusted operator session. To expose its preparation capability to the existing OpenClaw mission without granting signatures, run `python3 a2a/nft-live/activate-issuer-capability.py` in the WSL checkout.
+
+**Automatic minting and listing by OpenClaw remain blocked**, while manual owner-approved minting/listing is implemented. Existing autonomous spending budget remains 0 USDC. No NFTs are owned, listed, or sold merely because this code has been published. Production sales require successful chain receipts and marketplace order indexing.
 
 No copyright infringement, wash trading, self-funded purchases, fake royalties, false scarcity or speculative investment promises. Revenue must be independently verified and exclude tests/owner-wallet movements.
 
