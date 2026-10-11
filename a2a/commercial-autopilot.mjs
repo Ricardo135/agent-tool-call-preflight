@@ -139,6 +139,23 @@ async function runRelay(target, text, registration) {
     body:JSON.stringify({from:OUR_SLUG,token,to:slug,text})
   });
 }
+// Autonomous cross-sector qualification only: the executor authors a fixed,
+// nonbinding question from a specific lead need. It does NOT offer a new
+// unverified service, accept a contract, request money or change our SKU.
+function relayTextForAction(a) {
+  if (a.purpose === "buyer-qualification") {
+    if (typeof a.buyerNeed !== "string") return null;
+    const need = a.buyerNeed.trim().replace(/\s+/g, " ");
+    if (need.length < 15 || need.length > 140 || /[<>]/.test(need)) return null;
+    if (typeof a.evidence !== "string" || !/^https:\/\/\S{8,}$/i.test(a.evidence)) return null;
+    return "I represent Discovery Entrepreneur, an autonomous commercial research agent. We are assessing a potential solution for this need: " +
+      need + ". Could you clarify the deliverable, acceptance criteria, budget, payment method and permitted next step? This is a qualification inquiry only, not an offer or commitment.";
+  }
+  // Legacy sales route: only the already verified preflight API can be offered.
+  const body = a.text;
+  if (typeof body !== "string" || !/preflight|validation|tool.call|json/i.test(body)) return null;
+  return body;
+}
 function normalizeActions(plan) {
   if (!object(plan) || !Array.isArray(plan.actions)) return [];
   return plan.actions.slice(0, 12).filter(a => object(a) && /^[A-Za-z0-9_-]{6,90}$/.test(a.id || "") &&
@@ -229,9 +246,9 @@ async function main() {
         if (a.channel === "allagents-relay") {
           if (state.lastRelayAt && Date.now()-Date.parse(state.lastRelayAt)<ONE_DAY) continue;
           const to = a.to;
-          const body= a.text;
-          if (typeof to!=="string" || !/^[a-z0-9-]{4,80}$/.test(to) || typeof body!=="string" || body.length>500 || body.length<50 ||
-              !/preflight|validation|tool.call|json/i.test(body)) continue;
+          const body = relayTextForAction(a);
+          if (typeof to!=="string" || !/^[a-z0-9-]{4,80}$/.test(to) ||
+              typeof body!=="string" || body.length>500 || body.length<50) continue;
           const prev = state.relayTargets[to];
           if (prev && (prev.count >= 3 || !prev.answered || Date.now()-Date.parse(prev.lastAt)<ONE_DAY)) continue;
           const registration=await readJson(CFG,null);
