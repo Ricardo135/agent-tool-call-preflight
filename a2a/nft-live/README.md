@@ -10,6 +10,8 @@ This is an **actual, operator-controlled** ERC-721 contract deploy/mint/listing 
 - **Approved NFT fee allowance:** MXN 100 **total lifetime**, not per operation; the hardcoded software gate also permits at most 0.0001 ETH **per on-chain transaction**. It converts ETH gas estimates into MXN using a fresh CoinGecko ETH/MXN rate, reserves 25% FX margin and double the estimated Base L1 and operator components, and fails closed when any rate/fee input is missing. A new human authorization is necessary to raise either limit.
 - Manual confirmation for every deployment, mint, approval and listing. The MXN 100 authorization does **not** enable unattended wallets or signing by OpenClaw.
 
+The NFT compiler was updated to `solc@0.8.37` in response to GHSA-52f5-9888-hmc6 and GHSA-ph9p-34f9-6g65 in its old transitive `tmp` dependency. The new `compiler.test.mjs` runs a no-wallet OpenZeppelin ERC721 compilation regression. **Do not provide signer keys or enable transactions until `npm audit --omit=dev` reports zero vulnerabilities and all tests pass on the actual WSL installation.** If the audit still reports a vulnerable dependency, stop and report its dependency path; don't run `npm audit fix --force` blindly.
+
 **The smart contract has not been externally audited.** OpenZeppelin components reduce risk but do not establish full contract security.
 
 ## Installation in WSL
@@ -21,8 +23,9 @@ cd /home/openclaw/agent-tool-call-preflight-public
 git status --short
 git pull --ff-only
 cd a2a/nft-live
-npm install
-npm test
+npm install --ignore-scripts
+npm audit --omit=dev
+npm test # includes full ERC721 compile with solc 0.8.37
 node issuer.mjs status
 ```
 
