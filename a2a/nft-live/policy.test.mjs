@@ -8,7 +8,7 @@ import {
 const asset={
   id:'nft_licensed_123',
   name:'Authorized collectible',
-  tokenUri:'ipfs://bafybeigdyrzt6r74urln54vmr5vk4qv4yhe7ktyomdqc2zehx78yeo4dmi',
+  tokenUri:'ipfs://bafybeigdyrzt6r74urln54vmr5vk4qv4yhe7ktyomdqc2zehxy7yeo4dmi',
   rightsBasis:'original-owned',
   rightsEvidence:'Original work by the collection owner, artwork registration in private ledger.',
   rightsConfirmedByOwner:true,
