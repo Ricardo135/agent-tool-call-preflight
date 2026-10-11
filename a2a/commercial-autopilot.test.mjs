@@ -146,3 +146,49 @@ test("An already-failed legacy MARS broker attempt is repaired only once using q
     assert.doesNotMatch(second.stdout,/MARS commercial operation:/);
   } finally { await rm(home,{recursive:true,force:true}); }
 });
+
+test("Cross-sector AI buyer qualification is sent only to explicit RFQ opt-in, without invented product claims", async () => {
+  const home=await mkdtemp(join(tmpdir(),"sector-qualification-test-"));
+  try {
+    const dir=join(home,".openclaw/workspace/research/agent-commerce");
+    const cfg=join(home,".config/discovery-entrepreneur");
+    await mkdir(dir,{recursive:true});
+    await mkdir(cfg,{recursive:true});
+    await writeFile(join(cfg,"allagents-registration.json"), JSON.stringify({token:"fake-test-token-1234567"}));
+    await writeFile(join(dir,"commercial-autopilot-state.json"),JSON.stringify({
+      version:1,discoveryQueryVersion:1,lastDiscoveryAt:new Date().toISOString(),
+      operations:{},lastRelayAt:null,relayTargets:{}
+    }));
+    await writeFile(join(dir,"commercial-deal-actions.json"),JSON.stringify({actions:[{
+      id:"CROSS_SECTOR_NEED_001",channel:"allagents-relay",purpose:"buyer-qualification",
+      to:"optin-sector-agent",
+      buyerNeed:"workflow integration and testable process automation",
+      rationale:"This published vendor-intake channel invites proposals for a specific workflow need.",
+      evidence:"https://example.org/public/rfq/123"
+    }]}));
+    const mock=join(home,"mock-sector.mjs");
+    await writeFile(mock,`globalThis.fetch=async (url,opt={})=>{
+      if(String(url).includes("/agent/optin-sector-agent?format=json"))
+        return new Response(JSON.stringify({agent:{tags:["vendor-proposals"]}}),{status:200,headers:{"content-type":"application/json"}});
+      if(String(url)==="https://allagents.app/relay") {
+        const req=JSON.parse(opt.body);
+        if(req.to!=="optin-sector-agent" || !req.text.includes("acceptance criteria") ||
+           !req.text.includes("workflow integration") || req.text.includes("0.005 USDC"))
+          throw new Error("Cross-sector qualification missing or falsely advertises fixed SKU");
+        return new Response(JSON.stringify({reply:"Please send requirements."}),{status:200,headers:{"content-type":"application/json"}});
+      }
+      throw new Error("Unexpected fetch: "+url);
+    };`);
+    const env={...process.env,HOME:home};
+    const script=resolve("a2a/commercial-autopilot.mjs");
+    const first=spawnSync(process.execPath,["--import",mock,script,"--run"],{env,encoding:"utf8",timeout:10000});
+    assert.equal(first.status,0,first.stderr);
+    const state=JSON.parse(await readFile(join(dir,"commercial-autopilot-state.json"),"utf8"));
+    assert.equal(state.operations.CROSS_SECTOR_NEED_001.status,"response_received");
+    assert.equal(state.relayTargets["optin-sector-agent"].count,1);
+    const second=spawnSync(process.execPath,["--import",mock,script,"--run"],{env,encoding:"utf8",timeout:10000});
+    assert.equal(second.status,0,second.stderr);
+    const after=JSON.parse(await readFile(join(dir,"commercial-autopilot-state.json"),"utf8"));
+    assert.equal(after.relayTargets["optin-sector-agent"].count,1);
+  } finally { await rm(home,{recursive:true,force:true}); }
+});
