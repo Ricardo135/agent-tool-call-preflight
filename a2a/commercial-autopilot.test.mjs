@@ -192,3 +192,68 @@ test("Cross-sector AI buyer qualification is sent only to explicit RFQ opt-in, w
     assert.equal(after.relayTargets["optin-sector-agent"].count,1);
   } finally { await rm(home,{recursive:true,force:true}); }
 });
+
+test("OpenClaw-selected market research overrides fixed JSON-validation queries without duplicates", async () => {
+  const home=await mkdtemp(join(tmpdir(),"openclaw-market-selected-"));
+  try {
+    const dir=join(home,".openclaw/workspace/research/agent-commerce");
+    await mkdir(dir,{recursive:true});
+    await writeFile(join(dir,"commercial-market-placeholder.txt"),"none");
+    await writeFile(join(dir,"market-demand-plan.json"),JSON.stringify({queries:[
+      {query:"autonomous manufacturing workflow integration procurement",
+       evidence:"https://example.org/rfq/manufacturing-automation",
+       rationale:"A public buyer request explicitly calls for automation workflow integration.",status:"search"},
+      {query:"autonomous manufacturing workflow integration procurement",
+       evidence:"https://example.org/rfq/manufacturing-automation",
+       rationale:"Duplicate public need must not create extra queries.",status:"search"},
+      {query:"unrelated repeated query should not be used",
+       evidence:"https://example.org/invalid",
+       rationale:"This candidate was already disqualified by the autonomous agent.",status:"disqualified"}
+    ]}));
+    const mock=join(home,"mock-market.mjs");
+    await writeFile(mock,`globalThis.fetch=async (url,opt={})=>{
+      const data=JSON.parse(opt.body);
+      const p=data?.params?.message?.parts?.[0]?.data;
+      if(p?.action!=="discover_buyer_demand" || p?.input?.query!=="autonomous manufacturing workflow integration procurement")
+        throw new Error("Executor ignored OpenClaw-selected query");
+      return new Response(JSON.stringify({jsonrpc:"2.0",result:{task:{
+        id:"discovery_agent_chosen",status:{state:"TASK_STATE_COMPLETED"},
+        metadata:{operationResult:{ok:true,status:200,data:{demands:[]}}}
+      }}}),{status:200,headers:{"content-type":"application/json"}});
+    };`);
+    const script=resolve("a2a/commercial-autopilot.mjs");
+    const env={...process.env,HOME:home};
+    const run=()=>spawnSync(process.execPath,["--import",mock,script,"--run"],{env,encoding:"utf8",timeout:10000});
+    const first=run();
+    assert.equal(first.status,0,first.stderr);
+    const signals=JSON.parse(await readFile(join(dir,"commercial-autopilot-signals.json"),"utf8"));
+    assert.equal(signals.latestDiscovery.query,"autonomous manufacturing workflow integration procurement");
+    assert.equal(signals.latestDiscovery.source,"agent_selected_public_market_research");
+    const second=run();
+    assert.equal(second.status,0,second.stderr);
+    assert.doesNotMatch(second.stdout,/MARS demand discovery:/);
+  } finally { await rm(home,{recursive:true,force:true}); }
+});
+
+test("Empty OpenClaw market plan suspends legacy MARS searches after bounded attempts", async () => {
+  const home=await mkdtemp(join(tmpdir(),"openclaw-no-market-"));
+  try {
+    const dir=join(home,".openclaw/workspace/research/agent-commerce");
+    await mkdir(dir,{recursive:true});
+    await writeFile(join(dir,"commercial-autopilot-state.json"),JSON.stringify({
+      version:1,operations:{},discoveryCycle:4,
+      discoveryQueryVersion:1,lastDiscoveryAt:new Date().toISOString(),
+      relayTargets:{},lastRelayAt:null
+    }));
+    await writeFile(join(dir,"market-demand-plan.json"),'{"queries":[]}');
+    const mock=join(home,"mock-never-network.mjs");
+    await writeFile(mock,`globalThis.fetch=async ()=>{ throw new Error("No old MARS searches allowed"); };`);
+    const script=resolve("a2a/commercial-autopilot.mjs");
+    const env={...process.env,HOME:home};
+    const result=spawnSync(process.execPath,["--import",mock,script,"--run"],{env,encoding:"utf8",timeout:10000});
+    assert.equal(result.status,0,result.stderr);
+    assert.match(result.stdout,/MARS buyer discovery suspended/);
+    const signals=JSON.parse(await readFile(join(dir,"commercial-autopilot-signals.json"),"utf8"));
+    assert.equal(signals.latestDiscovery.status,"suspended_no_agent_selected_demand");
+  } finally {await rm(home,{recursive:true,force:true});}
+});
