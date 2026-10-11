@@ -1,0 +1,43 @@
+name: Register x402 seller on Agent402
+on:
+  push:
+    paths:
+      - ".github/workflows/register-x402-seller.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  register:
+    name: Register live API in free buyer marketplace
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify published API is reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          origin="https://json-contract-checker-mainnet.romo-ricardo.workers.dev"
+          curl --fail --silent --show-error --max-time 20 "$origin/health" >/dev/null
+          curl --fail --silent --show-error --max-time 20 "$origin/openapi.json" >/dev/null
+          echo "Production origin responded successfully."
+
+      - name: Register origin for buyer routing (no account, zero listing fee)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Registering public origin on Agent402's documented free seller index."
+          response="$(mktemp)"
+          status="$(curl --silent --show-error --max-time 40 --connect-timeout 10 \
+            -o "$response" -w '%{http_code}' \
+            -X POST https://agent402.tools/api/index/register \
+            -H 'content-type: application/json' \
+            --data '{"origin":"https://json-contract-checker-mainnet.romo-ricardo.workers.dev"}')"
+          echo "Registration HTTP status: $status"
+          head -c 3000 "$response"
+          echo
+          case "$status" in
+            200|201|202) echo "Seller registration request accepted; verify subsequent crawler indexing separately." ;;
+            *) echo "Seller registration rejected or unavailable; this is NOT a completed listing." >&2; exit 1 ;;
+          esac
