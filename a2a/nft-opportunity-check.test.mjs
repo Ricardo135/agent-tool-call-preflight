@@ -43,3 +43,8 @@ test('duplicate IDs cannot invent repeated opportunities',()=>{
  assert.equal(r.candidatesEvaluated,1);
  assert.equal(r.revenueVerifiedUsdc,null);
 });
+
+test('reserved example evidence domains are rejected',()=>{
+ const r=evaluateNFT({...valid,buyerEvidenceUrl:'https://actual-public-request.example/path'});
+ assert.ok(r.missing.includes('independently_evidenced_buyer_need'));
+});
