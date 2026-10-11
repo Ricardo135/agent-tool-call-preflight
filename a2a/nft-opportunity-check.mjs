@@ -21,6 +21,7 @@ function evidenceUrl(x) {
     const u = new URL(x);
     return u.protocol === 'https:' && u.hostname.includes('.') &&
       !['example.com', 'example.org', 'example.net', 'localhost'].includes(u.hostname) &&
+      !['.example','.test','.invalid','.localhost'].some(suffix => u.hostname.endsWith(suffix)) &&
       u.pathname !== '/' && !u.username && !u.password;
   } catch { return false; }
 }
