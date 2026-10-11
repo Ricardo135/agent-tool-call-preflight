@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import solc from 'solc';
+import {createRequire} from 'node:module';
 
 const here=dirname(fileURLToPath(import.meta.url));
 test('patched solc >=0.8.37 compiles actual DiscoveryNFT ERC721 and OpenZeppelin imports',()=>{
@@ -27,4 +28,13 @@ test('patched solc >=0.8.37 compiles actual DiscoveryNFT ERC721 and OpenZeppelin
   assert.ok(contract?.abi?.some(x=>x.type==='function'&&x.name==='mintTo'),'mintTo must exist');
   assert.match(contract?.evm?.bytecode?.object||'',/^[0-9a-f]{500,}$/i,
     'contract bytecode missing');
+});
+
+test('solc uses patched tmp transitive dependency 0.2.7',()=>{
+  const req=createRequire(import.meta.url);
+  const solcPkgPath=req.resolve('solc/package.json');
+  const solcRequire=createRequire(solcPkgPath);
+  const tmpPackage=solcRequire('tmp/package.json');
+  assert.equal(tmpPackage.version,'0.2.7',
+    'tmp transitive dependency must be patched (npm overrides)');
 });
