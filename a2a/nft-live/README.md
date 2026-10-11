@@ -14,6 +14,21 @@ The NFT compiler was updated to `solc@0.8.37` in response to GHSA-52f5-9888-hmc6
 
 **The smart contract has not been externally audited.** OpenZeppelin components reduce risk but do not establish full contract security.
 
+## Bind the new NFT wallet public address (no secrets)
+
+After creating a new wallet in MetaMask with a **different recovery phrase** from the previously exposed x402 wallet, switch MetaMask to **Base Mainnet**, Chain ID `8453`. In WSL, run:
+
+```bash
+cd /home/openclaw/agent-tool-call-preflight-public/a2a/nft-live
+node bind-wallet.mjs '0xYOUR_NEW_PUBLIC_ADDRESS'
+node bind-wallet.mjs --check
+node issuer.mjs status
+```
+
+The public address is stored in `~/.config/discovery-entrepreneur/nft-live/wallet.json`. This records an allowed address only; it cannot sign, mint, list or access MetaMask. The actual signer, if eventually configured in a **separate trusted owner session**, must match this address; otherwise the issuer refuses to sign. Attempting to replace an already bound public wallet fails closed until previous NFT operations are reconciled. This wallet should not be the previously exposed x402 wallet.
+
+**Important:** this CLI's current signer backend uses a locally supplied private key, not the MetaMask browser extension. Binding an address does not integrate MetaMask signing. Do **not** export your MetaMask recovery phrase or private key just to get the CLI working. A separately audited wallet-connect or hardware signer adapter is preferable before any production spend.
+
 ## Installation in WSL
 
 The working WSL checkout contains unpublished 6.0 changes. Preserve and merge them first; never `git reset --hard`, force-pull or overwrite Codex's local changes.
