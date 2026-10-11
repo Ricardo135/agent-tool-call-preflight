@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 const BASE = join(homedir(), ".openclaw/workspace/research/agent-commerce");
 const CFG = join(homedir(), ".config/discovery-entrepreneur/allagents-registration.json");
 const PLAN = join(BASE, "commercial-deal-actions.json");
+const MARKET_PLAN = join(BASE, "market-demand-plan.json");
 const SIGNALS = join(BASE, "commercial-autopilot-signals.json");
 const STATE = join(BASE, "commercial-autopilot-state.json");
 const MARS = "https://mars-economic-agent-gateway.mars-economic.workers.dev/a2a";
@@ -29,7 +30,7 @@ const MARKET_QUERIES = [
   "AI agent API contract preflight",
   "JSON tool-call input validation before execution"
 ];
-const DISCOVERY_QUERY_VERSION = 1;
+const DISCOVERY_QUERY_VERSION = 2;
 const ONE_DAY = 86400000;
 const FOUR_HOURS = 14400000;
 const MARS_FIND_SCHEMA_VERSION = 2;
@@ -74,6 +75,31 @@ function prepareBrokerInput(operation, candidate) {
   const q = clean.query || "JSON tool-call input validation";
   if (typeof q !== "string" || q.trim().length < 5) return null;
   return {query:q.slice(0,200),item_type:"DEMAND",limit:5};
+}
+// OpenClaw owns market selection. This file only validates its researched
+// public market search queries and never invents a sector or buyer.
+function vettedMarketQueries(plan) {
+  if (!object(plan) || !Array.isArray(plan.queries)) return [];
+  const unique = new Set();
+  const entries = [];
+  for (const item of plan.queries.slice(0, 10)) {
+    if (!object(item) || item.status !== "search" ||
+        typeof item.query !== "string" ||
+        typeof item.rationale !== "string" ||
+        typeof item.evidence !== "string") continue;
+    const query = item.query.trim().replace(/\s+/g, " ");
+    if (query.length < 10 || query.length > 180 ||
+        item.rationale.length < 20 || item.rationale.length > 600 ||
+        item.evidence.length > 700 ||
+        !/^https:\/\/[^\s/]+\/\S{1,}$/i.test(item.evidence) ||
+        /[\r\n]/.test(query)) continue;
+    const key = query.toLowerCase();
+    if (unique.has(key)) continue;
+    unique.add(key);
+    entries.push({query,evidence:item.evidence,rationale:item.rationale});
+    if (entries.length >= 5) break;
+  }
+  return entries;
 }
 function marsFailureCode(result) {
   if (result?.operationOk !== false && result?.state !== "TASK_STATE_FAILED") return null;
@@ -181,26 +207,52 @@ async function main() {
   }
   try {
     const updates = [];
-    // A version change rechecks immediately after the previous QUERY_REQUIRED response.
-    if (state.discoveryQueryVersion !== DISCOVERY_QUERY_VERSION ||
+    // Agent-selected public demand queries take priority and force one immediate
+    // check on plan change. Legacy product searches stop after four attempts,
+    // rather than repeating forever if independent research has found no buyers.
+    const marketQueries = vettedMarketQueries(await readJson(MARKET_PLAN,{queries:[]}));
+    const planFingerprint = JSON.stringify(marketQueries);
+    const planChanged = state.discoveryPlanFingerprint !== planFingerprint;
+    if (state.discoveryQueryVersion !== DISCOVERY_QUERY_VERSION || planChanged ||
         !state.lastDiscoveryAt || Date.now() - Date.parse(state.lastDiscoveryAt) > SIX_HOURS) {
-      const query = MARKET_QUERIES[(state.discoveryCycle || 0) % MARKET_QUERIES.length];
+      let query, source, evidence;
+      if (marketQueries.length) {
+        const index = planChanged ? 0 : (state.discoveryPlanCycle || 0);
+        const candidate = marketQueries[index % marketQueries.length];
+        query = candidate.query;
+        evidence = candidate.evidence;
+        source = "agent_selected_public_market_research";
+        state.discoveryPlanCycle = index + 1;
+      } else if ((state.discoveryCycle || 0) < MARKET_QUERIES.length) {
+        query = MARKET_QUERIES[state.discoveryCycle || 0];
+        source = "bounded_legacy_product_discovery";
+        state.discoveryCycle = (state.discoveryCycle || 0) + 1;
+      }
       state.discoveryQueryVersion = DISCOVERY_QUERY_VERSION;
-      state.discoveryCycle = (state.discoveryCycle || 0) + 1;
-      state.lastDiscoveryQuery = query;
+      state.discoveryPlanFingerprint = planFingerprint;
       state.lastDiscoveryAt = new Date().toISOString();
-      await writeJson(STATE,state); // Record attempt before outbound to prevent loops.
-      try {
-        const resp = summarizeMars(await runMars("discover_buyer_demand",{query}));
-        const record = {at:state.lastDiscoveryAt,channel:"mars",action:"discover_buyer_demand",query,reply:resp};
-        updates.push(record);
-        state.lastDiscovery = record;
-        console.log("MARS demand discovery:",resp.state || resp.operationStatus || "unknown");
-      } catch(e) {
-        const record = {at:state.lastDiscoveryAt,channel:"mars",action:"discover_buyer_demand",query,error:String(e).slice(0,300)};
-        state.lastDiscovery = record;
-        updates.push(record);
-        console.log("MARS discovery deferred:",String(e).slice(0,150));
+      if (!query) {
+        state.lastDiscovery = {
+          at:state.lastDiscoveryAt,channel:"mars",action:"discover_buyer_demand",
+          status:"suspended_no_agent_selected_demand",
+          note:"Legacy searches exhausted; OpenClaw must select new evidenced queries or pursue other channels."
+        };
+        console.log("MARS buyer discovery suspended: awaiting researched market queries from OpenClaw.");
+      } else {
+        state.lastDiscoveryQuery = query;
+        await writeJson(STATE,state); // Record attempt before outbound to prevent loops.
+        try {
+          const resp = summarizeMars(await runMars("discover_buyer_demand",{query}));
+          const record = {at:state.lastDiscoveryAt,channel:"mars",action:"discover_buyer_demand",query,source,evidence,reply:resp};
+          updates.push(record);
+          state.lastDiscovery = record;
+          console.log("MARS demand discovery:",resp.state || resp.operationStatus || "unknown");
+        } catch(e) {
+          const record = {at:state.lastDiscoveryAt,channel:"mars",action:"discover_buyer_demand",query,source,evidence,error:String(e).slice(0,300)};
+          state.lastDiscovery = record;
+          updates.push(record);
+          console.log("MARS discovery deferred:",String(e).slice(0,150));
+        }
       }
       await writeJson(STATE,state);
     }
